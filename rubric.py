@@ -108,7 +108,7 @@ def _locate_header_row(raw) -> tuple[int | None, int | None, int | None, int | N
     Returns (header_row_index, criterion_col_idx, max_score_col_idx,
     description_col_idx). Any of these may be None if not found.
     """
-    max_scan_rows = min(5, len(raw))
+    max_scan_rows = min(config.RUBRIC_HEADER_SCAN_ROWS, len(raw))
     for row_idx in range(max_scan_rows):
         headers = [normalize_header(v) for v in raw.iloc[row_idx].tolist()]
         criterion_col = _find_column(headers, config.RUBRIC_CRITERION_ALIASES)

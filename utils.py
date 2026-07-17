@@ -174,16 +174,68 @@ def compute_grade(percentage: float) -> str:
 
 
 def coerce_float(value: Any, default: float = 0.0) -> float:
-    """Best-effort conversion of an arbitrary value to float."""
+    """Best-effort conversion of an arbitrary value to float.
+
+    Handles the score shapes LLMs commonly drift into even when asked
+    for a plain number: "18/25", "18 out of 25", "18 pts", a dict like
+    {"score": 18, "max": 25}, or a numeric string. Extracts the FIRST
+    number found rather than naively stripping non-digit characters,
+    which would otherwise mangle "18/25" into 1825.
+    """
     if value is None:
+        return default
+    if isinstance(value, bool):
         return default
     if isinstance(value, (int, float)):
         return float(value)
-    try:
-        cleaned = re.sub(r"[^0-9.\-]", "", str(value))
-        return float(cleaned) if cleaned not in ("", "-", ".") else default
-    except (ValueError, TypeError):
+    if isinstance(value, dict):
+        for key in ("score", "value", "achieved", "points", "marks"):
+            if key in value:
+                return coerce_float(value[key], default)
         return default
+    match = re.search(r"-?\d+(?:\.\d+)?", str(value))
+    if match:
+        try:
+            return float(match.group())
+        except ValueError:
+            return default
+    return default
+
+
+def normalize_key(value: Any) -> str:
+    """Normalise an arbitrary key (e.g. an LLM-returned criterion name)
+    for tolerant, case/whitespace-insensitive matching against rubric
+    criterion names."""
+    if value is None:
+        return ""
+    return re.sub(r"\s+", " ", str(value).strip().lower())
+
+
+def coerce_string_list(value: Any) -> list[str]:
+    """Best-effort conversion of an arbitrary value into a list of strings.
+
+    LLMs asked for a JSON list sometimes instead return a single
+    newline/bullet-separated string, or a dict of labelled points. This
+    normalises all of those shapes into a clean list so downstream
+    columns (e.g. Areas of Strength / Areas of Improvement) are never
+    silently left empty just because the shape wasn't a bare list.
+    """
+    if value is None:
+        return []
+    if isinstance(value, list):
+        return [str(item).strip() for item in value if str(item).strip()]
+    if isinstance(value, dict):
+        return [str(item).strip() for item in value.values() if str(item).strip()]
+    if isinstance(value, str):
+        if not value.strip():
+            return []
+        # Split on newlines or bullet/number markers, then strip the marker itself.
+        pieces = re.split(r"\n+", value.strip())
+        if len(pieces) == 1:
+            pieces = re.split(r"(?<=[.;])\s{2,}", value.strip())
+        cleaned = [re.sub(r"^[\-\*•‣\d]+[\.\)]?\s*", "", p).strip() for p in pieces]
+        return [c for c in cleaned if c]
+    return [str(value).strip()] if str(value).strip() else []
 
 
 def join_nonempty(parts: list[str], separator: str = "\n\n") -> str:

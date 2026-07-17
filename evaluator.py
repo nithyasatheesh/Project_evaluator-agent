@@ -27,7 +27,9 @@ from utils import (
     StudentContext,
     clamp,
     coerce_float,
+    coerce_string_list,
     compute_grade,
+    normalize_key,
     setup_logger,
 )
 
@@ -167,18 +169,39 @@ def _call_openai_with_retries(client, messages: list[dict[str, str]]) -> str:
 
 
 def _score_from_llm_payload(payload: dict, rubric: Rubric, result: EvaluationResult) -> None:
-    """Populate result.scores from the raw LLM payload, clamped to rubric maxima."""
+    """Populate result.scores from the raw LLM payload, clamped to rubric maxima.
+
+    The LLM is instructed to use the rubric's exact criterion names as
+    keys, but in practice models occasionally drift (different casing,
+    trailing punctuation, minor rewording). Rather than silently
+    defaulting a criterion to 0 the moment an exact key match fails,
+    this falls back to a whitespace/case-insensitive match before
+    giving up, so a criterion isn't blanked out over a cosmetic
+    mismatch like "Code Quality " vs "code quality".
+    """
     raw_scores = payload.get("scores", {})
     if not isinstance(raw_scores, dict):
+        result.warnings.append(
+            f"LLM response 'scores' field was not an object (got {type(raw_scores).__name__}); "
+            "defaulted all scores to 0."
+        )
         raw_scores = {}
-        result.warnings.append("LLM response 'scores' field was not an object; defaulted all scores to 0.")
+
+    normalized_scores = {normalize_key(k): v for k, v in raw_scores.items()}
+    unmatched_llm_keys = set(normalized_scores.keys())
 
     for criterion in rubric.criteria:
         raw_value = raw_scores.get(criterion.name)
+        matched_key = normalize_key(criterion.name)
+        if raw_value is None:
+            raw_value = normalized_scores.get(matched_key)
+        unmatched_llm_keys.discard(matched_key)
+
         if raw_value is None:
             result.warnings.append(f"Missing score for criterion '{criterion.name}'; defaulted to 0.")
             result.scores[criterion.name] = 0.0
             continue
+
         numeric = coerce_float(raw_value, default=0.0)
         clamped = clamp(numeric, 0.0, criterion.max_score)
         if clamped != numeric:
@@ -187,22 +210,44 @@ def _score_from_llm_payload(payload: dict, rubric: Rubric, result: EvaluationRes
             )
         result.scores[criterion.name] = clamped
 
+    if unmatched_llm_keys and raw_scores:
+        leftover_original = [k for k in raw_scores if normalize_key(k) in unmatched_llm_keys]
+        result.warnings.append(
+            f"LLM returned score key(s) that did not match any rubric criterion and were ignored: "
+            f"{', '.join(leftover_original)}"
+        )
+
 
 def _feedback_from_llm_payload(payload: dict, result: EvaluationResult) -> None:
-    """Populate qualitative feedback, strengths and improvements from the payload."""
+    """Populate qualitative feedback, strengths and improvements from the payload.
+
+    Tolerant of common LLM drift: "qualitative_feedback" arriving as a
+    plain string instead of an object, or "strengths"/"improvements"
+    arriving as a single newline/bullet-separated string or a dict
+    instead of a JSON list. coerce_string_list() normalises all of
+    those shapes so these columns are never left blank purely because
+    the model's output wasn't a bare list.
+    """
     feedback = payload.get("qualitative_feedback", {})
-    if not isinstance(feedback, dict):
-        feedback = {}
-    result.language_feedback = str(feedback.get("language_feedback", "") or "")
-    result.analysis_feedback = str(feedback.get("analysis_feedback", "") or "")
-    result.clarity_feedback = str(feedback.get("clarity_feedback", "") or "")
-    result.overall_feedback = str(feedback.get("overall_feedback", "") or "")
+    if isinstance(feedback, dict):
+        result.language_feedback = str(feedback.get("language_feedback", "") or "")
+        result.analysis_feedback = str(feedback.get("analysis_feedback", "") or "")
+        result.clarity_feedback = str(feedback.get("clarity_feedback", "") or "")
+        result.overall_feedback = str(feedback.get("overall_feedback", "") or "")
+    elif isinstance(feedback, str) and feedback.strip():
+        result.overall_feedback = feedback.strip()
+        result.warnings.append(
+            "LLM returned 'qualitative_feedback' as plain text instead of an object; "
+            "placed it in Overall Feedback only."
+        )
 
-    strengths = payload.get("strengths", [])
-    result.strengths = [str(s) for s in strengths] if isinstance(strengths, list) else []
+    result.strengths = coerce_string_list(payload.get("strengths", []))
+    result.improvements = coerce_string_list(payload.get("improvements", []))
 
-    improvements = payload.get("improvements", [])
-    result.improvements = [str(s) for s in improvements] if isinstance(improvements, list) else []
+    if not result.strengths:
+        result.warnings.append("LLM did not return any strengths for this submission.")
+    if not result.improvements:
+        result.warnings.append("LLM did not return any improvements for this submission.")
 
 
 def evaluate_student(

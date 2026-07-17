@@ -111,21 +111,45 @@ RUBRIC_CRITERION_ALIASES: set[str] = {
     "criterion",
     "criteria",
     "evaluation criteria",
+    "criterion name",
+    "criteria name",
+    "parameter",
+    "parameters",
+    "evaluation parameter",
+    "assessment criteria",
+    "rubric criteria",
+    "component",
+    "category",
+    "aspect",
 }
 RUBRIC_MAX_SCORE_ALIASES: set[str] = {
     "max score",
     "max marks",
     "marks",
     "weight",
+    "weightage",
     "maximum score",
     "maximum marks",
     "score",
+    "points",
+    "max points",
+    "total marks",
+    "total score",
+    "out of",
 }
 RUBRIC_DESCRIPTION_ALIASES: set[str] = {
     "description",
     "evaluation parameters",
     "details",
+    "expectations",
+    "guidelines",
+    "criteria description",
+    "remarks",
 }
+
+# Number of leading rows scanned when looking for a header row in the
+# rubric spreadsheet (some templates have a title row above the header).
+RUBRIC_HEADER_SCAN_ROWS: int = 10
 
 # --------------------------------------------------------------------------
 # Grading scale
