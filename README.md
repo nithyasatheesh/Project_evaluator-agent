@@ -131,10 +131,16 @@ final report's "Parser Warnings" column instead of stopping the batch.
 
 ## Output Excel Columns
 
-`Student` · one column per rubric criterion · `Total` · `Max Score` ·
-`Percentage` · `Grade` · `Language Feedback` · `Analysis Feedback` ·
-`Clarity Feedback` · `Overall Feedback` · `Strengths` · `Improvements` ·
-`Parser Warnings` · `Evaluation Failed`
+`Student` · one column per rubric criterion, headed `"<Criterion Name> (Max
+<N>)"` with that student's achieved score in the cell · `Total` (a live
+`=SUM(...)` formula over the criterion columns) · `Max Score` · `Percentage`
+(a live formula, `Total / Max Score`) · `Grade` · `Language Feedback` ·
+`Analysis Feedback` · `Clarity Feedback` · `Overall Feedback` · `Areas of
+Strength` · `Areas of Improvement` · `Parser Warnings` · `Evaluation Failed`
+
+`Total` and `Percentage` are real Excel formulas, not static numbers — if a
+faculty member manually tweaks a criterion score in the sheet, both
+recalculate automatically.
 
 ---
 
@@ -149,14 +155,3 @@ and progress bar.
 
 `docs/screenshot-results.png` — Results summary table and Excel download
 button.
-
----
-
-## Notes on Extensibility
-
-- **New assignment types** require zero code changes — just upload a
-  different problem statement and rubric.
-- **New file formats** only require adding the extension to the relevant
-  set in `config.py` and a matching reader function in `readers.py`.
-- **New grading scales** can be adjusted via `GRADE_BOUNDARIES` in
-  `config.py`.
