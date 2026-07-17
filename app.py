@@ -8,7 +8,7 @@ import pandas as pd
 import streamlit as st
 
 from langchain_openai import ChatOpenAI
-from langchain.schema import HumanMessage
+from langchain_core.messages import HumanMessage
 
 # ------------------------------
 # CONFIG
